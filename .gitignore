@@ -1,0 +1,5 @@
+target
+.sbtopts
+project/.sbt
+.idea
+activemq-data
