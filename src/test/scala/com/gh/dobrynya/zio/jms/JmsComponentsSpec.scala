@@ -94,8 +94,8 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
                 _         <- send(messages, dest)
                 collector <- ZQueue.unbounded[String]
                 _ <- JmsConsumer
-                  .consumeTxWith(dest, message => ZIO.fail(s"Some processing error: ${onlyText(message)}!"))
-                  .ignore
+                      .consumeTxWith(dest, message => ZIO.fail(s"Some processing error: ${onlyText(message)}!"))
+                      .ignore
                 _ <- JmsConsumer
                       .consumeTxWith(dest, message => collector.offer(onlyText(message)))
                       .fork
@@ -105,49 +105,24 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
         }
       },
       testM("Client requires a response to be sent to a dedicated queue via JMSReplyTo header") {
-        val source     = Queue("JmsComponentsSpec-6")
-        val replyQueue = Queue("JmsComponentsSpec-7")
+        val requestDestination = Queue("JmsComponentsSpec-6")
+        val replyDestination   = Queue("JmsComponentsSpec-7")
 
-        val messages = List("1", "2", "3")
-
-        val produceWithReplyTo = (for {
-          jmsProducer <- JmsProducer.make(
-                          source,
-                          (message: String, session: Session) =>
-                            Task {
-                              val replyTo = replyQueue(session)
-                              val msg     = session.createTextMessage(message)
-                              msg.setJMSReplyTo(replyTo)
-                              msg.setJMSCorrelationID(message)
-                              msg
-                            }.refineToOrDie
-                        )
-        } yield jmsProducer).use(
-          p =>
-            ZStream
-              .fromIterable(messages)
-              .foreach(p.produce)
-        )
-
-        (for {
-          _ <- produceWithReplyTo
-          _ <- JmsConsumer
-                .consume(source)
-                .tap(s => putStrLn(s"Received request $s"))
-                .take(messages.size)
-                .map(m => onlyText(m) -> m.getJMSReplyTo)
-                .run(
-                  JmsProducer.routerSink(
-                    (message, session) =>
-                      textMessageEncoder(message._1.toUpperCase, session)
-                        .tap(m => UIO(m.setJMSCorrelationID(message._1)))
-                        .map(message._2 -> _)
-                        .tap(p => putStrLn(s"Responding to ${p._1}"))
-                  )
-                )
-          received <- JmsConsumer.consume(replyQueue).take(messages.size).collect(onlyText).runCollect
-        } yield assert(received.toList)(equalTo(messages)))
-          .provideSomeLayer[Console with Blocking](connectionLayer)
+        checkM(Gen.listOf(Gen.alphaNumericString).filter(_.nonEmpty)) {
+          messages =>
+            (for {
+              _ <- ZStream
+                    .fromIterable(messages)
+                    .run(JmsProducer.requestSink(requestDestination, replyDestination, textMessageEncoder))
+              _ <- JmsConsumer
+                    .consumeAndReplyWith(requestDestination,
+                                         (message, session) =>
+                                           textMessageEncoder(onlyText(message).toUpperCase, session).map(Some.apply))
+                    .fork
+              received <- JmsConsumer.consume(replyDestination).take(messages.size).collect(onlyText).runCollect
+            } yield assert(received.toList)(equalTo(messages.map(_.toUpperCase))))
+              .provideSomeLayer[Console with Blocking](connectionLayer)
+        }
       }
     ) @@ timeout(3.minute) @@ timed @@ sequential @@ around(brokerService)(stopBroker)
 

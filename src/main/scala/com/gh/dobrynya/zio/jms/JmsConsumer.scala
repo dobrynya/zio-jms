@@ -1,6 +1,6 @@
 package com.gh.dobrynya.zio.jms
 
-import javax.jms.{JMSException, Message, MessageConsumer, Session, Connection => JMSConnection}
+import javax.jms.{ JMSException, Message, MessageConsumer, Session, Connection => JMSConnection }
 import zio._
 import zio.blocking._
 import zio.stream.ZStream
@@ -48,13 +48,49 @@ object JmsConsumer {
       .managed(make[TransactionalMessage](destination, transacted = true, Session.SESSION_TRANSACTED))
       .flatMap(_.consume(new TransactionalMessage(_, _)))
 
+  def consumeAndReplyWith[R, E >: JMSException](
+    destination: DestinationFactory,
+    responder: (Message, Session) => ZIO[R, E, Option[Message]],
+    acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
+  ): ZIO[R with Blocking with Has[JMSConnection], E, Unit] = {
+    val consumerAndProducer = for {
+      connection <- ZIO.service[JMSConnection].toManaged_
+      session    <- session(connection, transacted = false, acknowledgementMode)
+      mc         <- consumer(session, destination(session))
+      mp         <- producer(session)
+    } yield (session, mc, mp)
+
+    ZStream
+      .managed(consumerAndProducer)
+      .flatMap {
+        case (session, mc, mp) =>
+          new JmsConsumer[Message](session, mc)
+            .consume((m, _) => m)
+            .mapM(message => responder(message, session).map(_.map((message, _))))
+            .collect {
+              case Some(requestResponse) if requestResponse._1.getJMSReplyTo != null =>
+                requestResponse
+            }
+            .mapM {
+              case (request, response) =>
+                Task {
+                  response.setJMSCorrelationID(request.getJMSCorrelationID)
+                  mp.send(request.getJMSReplyTo, response)
+                  request.acknowledge()
+                  println(s"Sent $response")
+                }.refineToOrDie
+            }
+      }
+      .runDrain
+  }
+
   def consumeWith[R, E >: JMSException](
     destination: DestinationFactory,
     processor: Message => ZIO[R, E, Any],
     acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
   ): ZIO[R with BlockingConnection, E, Unit] =
     make[Message](destination, transacted = false, acknowledgementMode)
-      .use(_.consume((m, _) => m).foreach(processor).unit)
+      .use(_.consume((m, _) => m).foreach(m => processor(m) *> acknowledge(m)).unit)
 
   /**
    * Consumes the specified destination and provides the processor with received message.
@@ -71,11 +107,8 @@ object JmsConsumer {
   ): ZIO[R with BlockingConnection, E, Unit] =
     make[TransactionalMessage](destination, transacted = true, Session.AUTO_ACKNOWLEDGE)
       .use(
-        _.consume(new TransactionalMessage(_, _))
-          .foreach { tm =>
-            processor(tm.message)
-              .tapBoth(_ => tm.rollback, _ => tm.commit)
-          }
-          .unit
+        _.consume(new TransactionalMessage(_, _)).foreach { tm =>
+          processor(tm.message).tapBoth(_ => tm.rollback, _ => tm.commit)
+        }.unit
       )
 }
