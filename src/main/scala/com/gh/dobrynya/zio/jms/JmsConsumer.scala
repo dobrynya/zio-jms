@@ -51,11 +51,20 @@ object JmsConsumer {
   def consumeAndReplyWith[R, E >: JMSException](
     destination: DestinationFactory,
     responder: (Message, Session) => ZIO[R, E, Option[Message]],
+    transacted: Boolean = false,
     acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
-  ): ZIO[R with Blocking with Has[JMSConnection], E, Unit] = {
+  ): ZIO[R with Blocking with Has[JMSConnection], Any, Unit] =
+    createPipeline(destination, responder, transacted, acknowledgementMode)
+
+  private[jms] def createPipeline[R, E](
+    destination: DestinationFactory,
+    responder: (Message, Session) => ZIO[R, E, Option[Message]],
+    transacted: Boolean,
+    acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
+  ): ZIO[R with BlockingConnection, Any, Unit] = {
     val consumerAndProducer = for {
       connection <- ZIO.service[JMSConnection].toManaged_
-      session    <- session(connection, transacted = false, acknowledgementMode)
+      session    <- session(connection, transacted, acknowledgementMode)
       mc         <- consumer(session, destination(session))
       mp         <- producer(session)
     } yield (session, mc, mp)
@@ -66,19 +75,21 @@ object JmsConsumer {
         case (session, mc, mp) =>
           new JmsConsumer[Message](session, mc)
             .consume((m, _) => m)
-            .mapM(message => responder(message, session).map(_.map((message, _))))
-            .collect {
-              case Some(requestResponse) if requestResponse._1.getJMSReplyTo != null =>
-                requestResponse
-            }
-            .mapM {
-              case (request, response) =>
-                Task {
-                  response.setJMSCorrelationID(request.getJMSCorrelationID)
-                  mp.send(request.getJMSReplyTo, response)
-                  request.acknowledge()
-                  println(s"Sent $response")
-                }.refineToOrDie
+            .mapM { request =>
+              for {
+                response <- responder(request, session)
+                _ <- response
+                      .filter(_ => request.getJMSReplyTo != null)
+                      .map(
+                        response =>
+                          Task {
+                            response.setJMSCorrelationID(request.getJMSCorrelationID)
+                            mp.send(request.getJMSReplyTo, response)
+                          }.tapError(_ => rollback(session).when(transacted))
+                      )
+                      .getOrElse(ZIO.unit)
+                _ <- acknowledge(request).unless(transacted) *> commit(session).when(transacted)
+              } yield ()
             }
       }
       .runDrain

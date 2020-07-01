@@ -1,6 +1,6 @@
 package com.gh.dobrynya.zio.jms
 
-import javax.jms.{Destination, JMSException, Message, Session, Connection => JMSConnection}
+import javax.jms.{ Destination, JMSException, Message, Session, Connection => JMSConnection }
 import zio._
 import zio.stream.ZSink
 
@@ -12,6 +12,17 @@ class JmsProducer[R, E >: JMSException, A](session: Session, sender: A => ZIO[R,
 
 object JmsProducer {
 
+  /**
+   * Creates a sink for sending messages. It commits a transaction automatically in case of a transactional session.
+   * @param destination specifies destination
+   * @param encoder creates a JMS message from a provided message
+   * @param transacted specifies whether to use a transaction
+   * @param acknowledgementMode specifies acknowledgement mode of a session
+   * @tparam R dependencies
+   * @tparam E errors
+   * @tparam A message type
+   * @return a newly created sink
+   */
   def sink[R, E >: JMSException, A](
     destination: DestinationFactory,
     encoder: (A, Session) => ZIO[R, E, Message],
@@ -21,7 +32,7 @@ object JmsProducer {
     ZSink.managed[R with BlockingConnection, E, A, JmsProducer[R, E, A], A, Unit](
       make(destination, encoder, transacted, acknowledgementMode)
     ) { jmsProducer =>
-      ZSink.foreach(jmsProducer.produce)
+      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
     }
 
   def make[R, E >: JMSException, A](
@@ -62,7 +73,7 @@ object JmsProducer {
                                        encoded
                                  })
     ) { jmsProducer =>
-      ZSink.foreach(jmsProducer.produce)
+      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
     }
 
   /**
@@ -102,6 +113,6 @@ object JmsProducer {
               encoded
             })
     ) { jmsProducer =>
-      ZSink.foreach(jmsProducer.produce)
+      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
     }
 }

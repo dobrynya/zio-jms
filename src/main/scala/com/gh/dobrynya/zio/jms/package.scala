@@ -29,10 +29,9 @@ package object jms {
     case text: TextMessage => text.getText
   }
 
-  def acknowledge(message: Message): ZIO[Blocking, JMSException, Message] =
+  def acknowledge(message: Message): ZIO[Blocking, JMSException, Unit] =
     effectBlockingInterrupt {
       message.acknowledge()
-      message
     }.refineToOrDie
 
   private[jms] def session(connection: Connection,
@@ -50,4 +49,10 @@ package object jms {
   private[jms] def consumer(session: Session,
                             destination: Destination): ZManaged[Blocking, JMSException, MessageConsumer] =
     Managed.make(effectBlockingInterrupt(session.createConsumer(destination)).refineToOrDie)(c => UIO(c.close()))
+
+  private[jms] def commit(session: Session): ZIO[Blocking, JMSException, Unit] =
+    effectBlockingInterrupt(session.commit()).refineToOrDie
+
+  private[jms] def rollback(session: Session): ZIO[Blocking, JMSException, Unit] =
+    effectBlockingInterrupt(session.rollback()).refineToOrDie
 }
