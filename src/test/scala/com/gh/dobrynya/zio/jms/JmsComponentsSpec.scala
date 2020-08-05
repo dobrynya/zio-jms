@@ -1,11 +1,9 @@
 package com.gh.dobrynya.zio.jms
 
-import javax.jms.{ Queue => _, _ }
-import zio.{ Queue => ZQueue, _ }
+import javax.jms.{Queue => _, _}
+import zio.{Queue => ZQueue, _}
 import zio.blocking.Blocking
-import zio.console._
 import zio.duration._
-import zio.random._
 import zio.stream._
 import zio.test._
 import zio.test.Assertion._
@@ -21,7 +19,7 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
         checkM(Gen.listOf(Gen.anyString)) { messages =>
           val received = jmsObjects("JmsSpec-1").use {
             case (s, p, mc, d) =>
-              ZIO.foreach(messages)(send(p, s, d, _)) *> ZIO.foreach(1 to messages.size)(_ => receiveText(mc))
+              ZIO.foreach(messages)(send(p, s, d, _)) *> ZIO.foreach((1 to messages.size).toList)(_ => receiveText(mc))
           }
           assertM(received)(equalTo(messages))
         }
@@ -52,7 +50,7 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
                   case (s, _, mc, _) => receiveText(mc) <* Task(if (i == 1) s.rollback() else s.commit())
                 }
               }
-          } yield assert(received)(equalTo(List(message, message)))
+          } yield assert(received.toList)(equalTo(List(message, message)))
         }
       },
       testM("Acknowledging consumer should get the same message twice without acknowledgement") {
@@ -62,7 +60,7 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
               received <- jmsObjects("JmsSpec-4").use {
                 case (s, p, _, d) => send(p, s, d, message)
               } *>
-                ZIO.foreach(1 to 2) { i =>
+                ZIO.foreach(List(1, 2)) { i =>
                   jmsObjects("JmsSpec-4", transacted = false, Session.CLIENT_ACKNOWLEDGE).use {
                     case (s, _, mc, _) =>
                       receive(mc)
@@ -94,7 +92,7 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
         checkM(Gen.listOf(Gen.alphaNumericString)) { messages =>
           (for {
             _ <- send(messages, dest)
-            received <- ZIO.foreach(1 to 2)(
+            received <- ZIO.foreach((1 to 2).toList)(
                          i =>
                            JmsConsumer
                              .consumeTx(dest)
@@ -114,7 +112,7 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
         checkM(Gen.listOf(Gen.alphaNumericString)) { messages =>
           (for {
             _ <- send(messages, dest)
-            received <- ZIO.foreach(1 to 2)(
+            received <- ZIO.foreach(List(1, 2))(
                          i =>
                            JmsConsumer
                              .consume(dest, Session.CLIENT_ACKNOWLEDGE)
