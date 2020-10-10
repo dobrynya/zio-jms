@@ -4,6 +4,9 @@ ZIO-JMS
 ZIO-JMS adapts JMS API to ZIO streams and makes it working more conveniently and seamlessly integrates ZIO
 
 ---
+# Add library to your project
+* Add maven repository [https://dl.bintray.com/dobrynya/maven](https://dl.bintray.com/dobrynya/maven) to your build tool 
+* Add dependency on the library "com.gh.dobrynya" %% "zio-jms" % "0.1"
 
 # Receive messages
 
@@ -113,7 +116,7 @@ import com.gh.dobrynya.zio.jms._
 import zio.stream._
 
 val request = Queue("request")
-val response   = Queue("response")
+val response = Queue("response")
 
 val messages: List[String] = ??? 
 
@@ -129,7 +132,7 @@ import zio.stream._
 
 val request = Queue("request")
 JmsConsumer.consumeAndReplyWith(request,
-  (message, session) => textMessageEncoder(onlyText(message).toUpperCase, session).map(Some.apply))
+  (message, session) => textMessageEncoder(onlyText(message).toUpperCase, session).asSome)
 ```
 
 Here is a responder handling input messages and optionally responding to them to a destination specified in 

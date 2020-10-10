@@ -30,17 +30,13 @@ package object jms {
   }
 
   def acknowledge(message: Message): ZIO[Blocking, JMSException, Unit] =
-    effectBlockingInterrupt {
-      message.acknowledge()
-    }.refineToOrDie
+    effectBlockingInterrupt(message.acknowledge()).refineToOrDie
 
   private[jms] def session(connection: Connection,
                            transacted: Boolean,
                            acknowledgeMode: Int): ZManaged[Blocking, JMSException, Session] =
     Managed
-      .make(effectBlockingInterrupt(connection.createSession(transacted, acknowledgeMode)))(
-        s => Task(s.close()).ignore
-      )
+      .make(effectBlockingInterrupt(connection.createSession(transacted, acknowledgeMode)))(s => Task(s.close()).orDie)
       .refineToOrDie
 
   private[jms] def producer(session: Session): ZManaged[Blocking, JMSException, MessageProducer] =
