@@ -5,20 +5,22 @@ import zio._
 import zio.blocking._
 import zio.stream.ZStream
 
-class JmsConsumer[T](session: Session, consumer: MessageConsumer) {
+class JmsConsumer[T](session: Session, consumer: MessageConsumer, semaphore: Semaphore) {
 
   /**
    * Consumes the specified destination and emits received message with this consumer to provide helpful operations.
    * @return a stream of received messages and a session to commit/rollback messages when working transactionally
    */
   def consume(enrich: (Message, JmsConsumer[T]) => T): ZStream[Blocking, JMSException, T] =
-    ZStream.repeatEffect(effectBlockingInterrupt(enrich(consumer.receive(), this)).refineToOrDie)
+    ZStream.repeatEffect(semaphore.withPermit(
+      effectBlockingInterrupt(enrich(consumer.receive(), this)).refineToOrDie
+    ))
 
   def commit: IO[JMSException, Unit] =
-    Task(session.commit()).refineToOrDie
+    semaphore.withPermit(Task(session.commit()).refineToOrDie)
 
   def rollback: IO[JMSException, Unit] =
-    Task(session.rollback()).refineToOrDie
+    semaphore.withPermit(Task(session.rollback()).refineToOrDie)
 }
 
 class TransactionalMessage(val message: Message, consumer: JmsConsumer[TransactionalMessage]) {
@@ -41,7 +43,8 @@ object JmsConsumer {
       connection <- ZIO.service[JMSConnection].toManaged_
       session    <- session(connection, transacted, acknowledgementMode)
       mc         <- consumer(session, destination(session))
-    } yield new JmsConsumer(session, mc)
+      semaphore <- Semaphore.make(1).toManaged_
+    } yield new JmsConsumer(session, mc, semaphore)
 
   def consumeTx(destination: DestinationFactory): ZStream[BlockingConnection, JMSException, TransactionalMessage] =
     ZStream
@@ -67,13 +70,14 @@ object JmsConsumer {
       session    <- session(connection, transacted, acknowledgementMode)
       mc         <- consumer(session, destination(session))
       mp         <- producer(session)
-    } yield (session, mc, mp)
+      semaphore <- Semaphore.make(1).toManaged_
+    } yield (session, mc, mp, semaphore)
 
     ZStream
       .managed(consumerAndProducer)
       .flatMap {
-        case (session, mc, mp) =>
-          new JmsConsumer[Message](session, mc)
+        case (session, mc, mp, semaphore) =>
+          new JmsConsumer[Message](session, mc, semaphore)
             .consume((m, _) => m)
             .mapM { request =>
               for {
@@ -116,7 +120,7 @@ object JmsConsumer {
     destination: DestinationFactory,
     processor: Message => ZIO[R, E, Any],
   ): ZIO[R with BlockingConnection, E, Unit] =
-    make[TransactionalMessage](destination, transacted = true, Session.AUTO_ACKNOWLEDGE)
+    make[TransactionalMessage](destination, transacted = true, Session.SESSION_TRANSACTED)
       .use(
         _.consume(new TransactionalMessage(_, _)).foreach { tm =>
           processor(tm.message).tapBoth(_ => tm.rollback, _ => tm.commit)

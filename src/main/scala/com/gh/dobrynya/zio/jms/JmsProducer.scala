@@ -4,10 +4,15 @@ import javax.jms.{ Destination, JMSException, Message, Session, Connection => JM
 import zio._
 import zio.stream.ZSink
 
-class JmsProducer[R, E >: JMSException, A](session: Session, sender: A => ZIO[R, E, Message]) {
-  def produce(message: A): ZIO[R, E, (A, Message)] = sender(message).map(message -> _)
-  def commit: IO[JMSException, Unit]               = Task(session.commit()).refineToOrDie
-  def rollback: IO[JMSException, Unit]             = Task(session.rollback()).refineToOrDie
+class JmsProducer[R, E >: JMSException, A](session: Session, sender: A => ZIO[R, E, Message], semaphore: Semaphore) {
+  def produce(message: A): ZIO[R, E, (A, Message)] =
+    semaphore.withPermit(sender(message).map(message -> _))
+
+  def commit: IO[JMSException, Unit] =
+    semaphore.withPermit(Task(session.commit()).refineToOrDie)
+
+  def rollback: IO[JMSException, Unit] =
+    semaphore.withPermit(Task(session.rollback()).refineToOrDie)
 }
 
 object JmsProducer {
@@ -32,7 +37,12 @@ object JmsProducer {
     ZSink.managed[R with BlockingConnection, E, A, JmsProducer[R, E, A], A, Unit](
       make(destination, encoder, transacted, acknowledgementMode)
     ) { jmsProducer =>
-      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
+      ZSink.foreach(
+        message =>
+          jmsProducer
+            .produce(message)
+            .tap(m => UIO(println("Sent by sink '%s'" format m._1))) <* jmsProducer.commit.when(transacted)
+      )
     }
 
   def make[R, E >: JMSException, A](
@@ -46,13 +56,15 @@ object JmsProducer {
       session    <- session(connection, transacted, acknowledgementMode)
       d          = destination(session)
       mp         <- producer(session)
+      semaphore  <- Semaphore.make(1).toManaged_
     } yield
       new JmsProducer[R, E, A](session,
                                message =>
                                  encoder(message, session).map { encoded =>
                                    mp.send(d, encoded)
                                    encoded
-                               })
+                               },
+                               semaphore)
 
   def routerSink[R, E >: JMSException, A](
     encoderAndRouter: (A, Session) => ZIO[R, E, (Destination, Message)],
@@ -64,6 +76,7 @@ object JmsProducer {
         connection <- ZIO.service[JMSConnection].toManaged_
         session    <- session(connection, transacted, acknowledgementMode)
         mp         <- producer(session)
+        semaphore  <- Semaphore.make(1).toManaged_
       } yield
         new JmsProducer[R, E, A](session,
                                  message =>
@@ -71,7 +84,8 @@ object JmsProducer {
                                      case (d, encoded) =>
                                        mp.send(d, encoded)
                                        encoded
-                                 })
+                                 },
+                                 semaphore)
     ) { jmsProducer =>
       ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
     }
@@ -102,16 +116,18 @@ object JmsProducer {
         connection  <- ZIO.service[JMSConnection].toManaged_
         session     <- session(connection, transacted, acknowledgementMode)
         mp          <- producer(session)
+        semaphore   <- Semaphore.make(1).toManaged_
         d           = destination(session)
         replyHeader = replyTo(session)
       } yield
         new JmsProducer[R, E, A](session,
-          message =>
-            encoder(message, session).map { encoded =>
-              encoded.setJMSReplyTo(replyHeader)
-              mp.send(d, encoded)
-              encoded
-            })
+                                 message =>
+                                   encoder(message, session).map { encoded =>
+                                     encoded.setJMSReplyTo(replyHeader)
+                                     mp.send(d, encoded)
+                                     encoded
+                                 },
+                                 semaphore)
     ) { jmsProducer =>
       ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
     }

@@ -3,7 +3,7 @@ organization := "com.gh.dobrynya"
 version := "0.1"
 scalaVersion := "2.13.3"
 crossScalaVersions := Seq("2.12.12")
-licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
+licenses += ("APACHE2.0", url("https://opensource.org/licenses/Apache-2.0"))
 
 libraryDependencies ++= Seq(
   "dev.zio" %% "zio" % "[1.0.0,)",
