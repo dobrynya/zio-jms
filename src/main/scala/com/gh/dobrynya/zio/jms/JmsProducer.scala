@@ -37,12 +37,7 @@ object JmsProducer {
     ZSink.managed[R with BlockingConnection, E, A, JmsProducer[R, E, A], A, Unit](
       make(destination, encoder, transacted, acknowledgementMode)
     ) { jmsProducer =>
-      ZSink.foreach(
-        message =>
-          jmsProducer
-            .produce(message)
-            .tap(m => UIO(println("Sent by sink '%s'" format m._1))) <* jmsProducer.commit.when(transacted)
-      )
+      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
     }
 
   def make[R, E >: JMSException, A](

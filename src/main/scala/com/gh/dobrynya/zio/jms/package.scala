@@ -11,12 +11,14 @@ package object jms {
   type BlockingConnection = Blocking with Has[Connection]
 
   def connection(connectionFactory: ConnectionFactory,
+                 clientId: Option[String] = None,
                  credentials: Option[(String, String)] = None): ZManaged[Blocking, JMSException, Connection] =
     Managed.make {
       effectBlockingInterrupt {
         val connection = credentials
           .map(creds => connectionFactory.createConnection(creds._1, creds._2))
           .getOrElse(connectionFactory.createConnection())
+        clientId.foreach(connection.setClientID)
         connection.start()
         connection
       }

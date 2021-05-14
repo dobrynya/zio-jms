@@ -12,12 +12,15 @@ trait ConnectionAware {
 
   val brokerService: IO[Any, BrokerService] = Task {
     val brokerService = new BrokerService()
-    brokerService.setUseJmx(true)
+    brokerService.setUseJmx(false)
     brokerService.setPersistent(false)
     brokerService.setUseShutdownHook(true)
     brokerService.start()
     brokerService
   }
 
-  val stopBroker: BrokerService => UIO[Unit] = (brokerService: BrokerService) => UIO(brokerService.stop())
+  val stopBroker: BrokerService => UIO[Unit] = (brokerService: BrokerService) => UIO {
+    brokerService.stop()
+    brokerService.waitUntilStopped()
+  }
 }
