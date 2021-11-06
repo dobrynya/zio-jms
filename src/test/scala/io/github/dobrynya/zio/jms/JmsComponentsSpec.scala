@@ -1,4 +1,4 @@
-package com.gh.dobrynya.zio.jms
+package io.github.dobrynya.zio.jms
 
 import javax.jms.{Queue => _, _}
 import zio.{Queue => ZQueue, _}
@@ -218,7 +218,7 @@ object JmsComponentsSpec extends DefaultRunnableSpec with ConnectionAware {
     for {
       c  <- managedConnection
       s  <- session(c, transacted, acknowledgementMode)
-      d  = Queue(dest)(s)
+      d  <- Queue(dest)(s).toManaged_
       p  <- producer(s)
       mc <- consumer(s, d)
     } yield (s, p, mc, d)

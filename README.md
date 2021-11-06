@@ -5,8 +5,8 @@ ZIO-JMS adapts JMS API to ZIO streams and makes it working more conveniently and
 
 ---
 # Add library to your project
-* Add maven repository [https://dl.bintray.com/dobrynya/maven](https://dl.bintray.com/dobrynya/maven) to your build tool 
-* Add dependency on the library "com.gh.dobrynya" %% "zio-jms" % "0.1"
+* Add Maven Central Repository to your build script
+* Add dependency on the library "io.github.dobrynya" %% "zio-jms" % "0.2"
 
 # Receive messages
 
@@ -16,7 +16,7 @@ For receiving messages it needs to create a message consumer using utility metho
 import zio.{ZIO, Has, Chunk}
 import zio.blocking._
 import javax.jms.{Connection, Message, JMSException}
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 
 val received: ZIO[Has[Connection] with Blocking, JMSException, Chunk[Message]] = 
     JmsConsumer.consume(Queue("test-queue"))
@@ -31,7 +31,7 @@ You can process a stream of messages transactionally like follows
 import zio.{ZIO, Has, Chunk, UIO}
 import zio.blocking._
 import javax.jms.{Connection, Message, JMSException}
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 
 def messageProcessor(message: Message): UIO[Unit] = ??? 
 
@@ -50,7 +50,7 @@ import zio.{ZIO, Has}
 import zio.blocking._
 import zio.console._
 import javax.jms.{Connection, Message, JMSException}
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 
 def someMessageProcessor(message: Message): ZIO[Console, Exception, Unit] = 
     putStrLn(s"Received message $message")
@@ -66,7 +66,7 @@ when it is processed successfully and rolls back when it fails
 import zio.{ZIO, IO, Has}
 import zio.blocking._
 import javax.jms.{Connection, Message, JMSException}
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 
 def someMessageProcessor(message: Message): IO[String, Unit] = 
    IO.fail(s"Error occurred during processing a message $message")
@@ -81,7 +81,7 @@ For sending messages it needs to create sinks providing a destination and a mess
 
 ```scala
 import zio.stream.ZStream
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 
 val messages = (1 to 100).map(i => s"Message $i")
 
@@ -96,7 +96,7 @@ The last thing is to provide a connection like follows
 import zio.{ZLayer, Has}
 import zio.blocking._
 import javax.jms.{Connection, ConnectionFactory, JMSException}
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 
 def connectionFactory: ConnectionFactory = ???
 
@@ -112,7 +112,7 @@ val consuming = JmsConsumer.consume(Queue("test-queue")).runDrain
 ## From a client's perspective
 
 ```scala
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 import zio.stream._
 
 val request = Queue("request")
@@ -127,7 +127,7 @@ ZStream.fromIterable(messages)
 ## From a server's perspective
 
 ```scala
-import com.gh.dobrynya.zio.jms._
+import io.github.dobrynya.zio.jms._
 import zio.stream._
 
 val request = Queue("request")

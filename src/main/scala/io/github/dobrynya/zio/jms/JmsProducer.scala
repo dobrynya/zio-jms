@@ -1,4 +1,4 @@
-package com.gh.dobrynya.zio.jms
+package io.github.dobrynya.zio.jms
 
 import javax.jms.{ Destination, JMSException, Message, Session, Connection => JMSConnection }
 import zio._
@@ -49,7 +49,7 @@ object JmsProducer {
     for {
       connection <- ZIO.service[JMSConnection].toManaged_
       session    <- session(connection, transacted, acknowledgementMode)
-      d          = destination(session)
+      d          <- destination(session).toManaged_
       mp         <- producer(session)
       semaphore  <- Semaphore.make(1).toManaged_
     } yield
@@ -112,8 +112,8 @@ object JmsProducer {
         session     <- session(connection, transacted, acknowledgementMode)
         mp          <- producer(session)
         semaphore   <- Semaphore.make(1).toManaged_
-        d           = destination(session)
-        replyHeader = replyTo(session)
+        d           <- destination(session).toManaged_
+        replyHeader <- replyTo(session).toManaged_
       } yield
         new JmsProducer[R, E, A](session,
                                  message =>

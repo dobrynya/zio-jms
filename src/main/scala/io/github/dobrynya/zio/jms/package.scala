@@ -1,4 +1,4 @@
-package com.gh.dobrynya.zio
+package io.github.dobrynya.zio
 
 import javax.jms._
 import zio._
@@ -6,8 +6,7 @@ import zio.blocking._
 
 package object jms {
 
-  type DestinationFactory = Session => Destination
-  type MessageFactory[T]  = (T, Session) => Message
+  type DestinationFactory = Session => IO[JMSException, Destination]
   type BlockingConnection = Blocking with Has[Connection]
 
   def connection(connectionFactory: ConnectionFactory,

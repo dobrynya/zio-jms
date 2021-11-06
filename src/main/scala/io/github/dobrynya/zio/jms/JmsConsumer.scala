@@ -1,4 +1,4 @@
-package com.gh.dobrynya.zio.jms
+package io.github.dobrynya.zio.jms
 
 import javax.jms.{ JMSException, Message, MessageConsumer, Session, Connection => JMSConnection }
 import zio._
@@ -16,16 +16,14 @@ class JmsConsumer[T](session: Session, consumer: MessageConsumer, semaphore: Sem
       effectBlockingInterrupt(enrich(consumer.receive(), this)).refineToOrDie
     ))
 
-  def commit: IO[JMSException, Unit] =
-    semaphore.withPermit(Task(session.commit()).refineToOrDie)
+  def commitSession: ZIO[Blocking, JMSException, Unit] = semaphore.withPermit(commit(session))
 
-  def rollback: IO[JMSException, Unit] =
-    semaphore.withPermit(Task(session.rollback()).refineToOrDie)
+  def rollbackSession: ZIO[Blocking, JMSException, Unit] = semaphore.withPermit(rollback(session))
 }
 
-class TransactionalMessage(val message: Message, consumer: JmsConsumer[TransactionalMessage]) {
-  def commit: IO[JMSException, Unit]   = consumer.commit
-  def rollback: IO[JMSException, Unit] = consumer.rollback
+class TxMessage(val message: Message, consumer: JmsConsumer[TxMessage]) {
+  def commit: ZIO[Blocking, JMSException, Unit]   = consumer.commitSession
+  def rollback: ZIO[Blocking, JMSException, Unit] = consumer.rollbackSession
 }
 
 object JmsConsumer {
@@ -42,14 +40,15 @@ object JmsConsumer {
     for {
       connection <- ZIO.service[JMSConnection].toManaged_
       session    <- session(connection, transacted, acknowledgementMode)
-      mc         <- consumer(session, destination(session))
+      d <- destination(session).toManaged_
+      mc         <- consumer(session, d)
       semaphore <- Semaphore.make(1).toManaged_
     } yield new JmsConsumer(session, mc, semaphore)
 
-  def consumeTx(destination: DestinationFactory): ZStream[BlockingConnection, JMSException, TransactionalMessage] =
+  def consumeTx(destination: DestinationFactory): ZStream[BlockingConnection, JMSException, TxMessage] =
     ZStream
-      .managed(make[TransactionalMessage](destination, transacted = true, Session.SESSION_TRANSACTED))
-      .flatMap(_.consume(new TransactionalMessage(_, _)))
+      .managed(make[TxMessage](destination, transacted = true, Session.SESSION_TRANSACTED))
+      .flatMap(_.consume(new TxMessage(_, _)))
 
   def consumeAndReplyWith[R, E >: JMSException](
     destination: DestinationFactory,
@@ -68,7 +67,8 @@ object JmsConsumer {
     val consumerAndProducer = for {
       connection <- ZIO.service[JMSConnection].toManaged_
       session    <- session(connection, transacted, acknowledgementMode)
-      mc         <- consumer(session, destination(session))
+      d <- destination(session).toManaged_
+      mc         <- consumer(session, d)
       mp         <- producer(session)
       semaphore <- Semaphore.make(1).toManaged_
     } yield (session, mc, mp, semaphore)
@@ -120,9 +120,9 @@ object JmsConsumer {
     destination: DestinationFactory,
     processor: Message => ZIO[R, E, Any],
   ): ZIO[R with BlockingConnection, E, Unit] =
-    make[TransactionalMessage](destination, transacted = true, Session.SESSION_TRANSACTED)
+    make[TxMessage](destination, transacted = true, Session.SESSION_TRANSACTED)
       .use(
-        _.consume(new TransactionalMessage(_, _)).foreach { tm =>
+        _.consume(new TxMessage(_, _)).foreach { tm =>
           processor(tm.message).tapBoth(_ => tm.rollback, _ => tm.commit)
         }.unit
       )

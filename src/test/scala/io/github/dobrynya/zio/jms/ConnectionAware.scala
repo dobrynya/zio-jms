@@ -1,4 +1,4 @@
-package com.gh.dobrynya.zio.jms
+package io.github.dobrynya.zio.jms
 
 import javax.jms.{Connection, JMSException}
 import org.apache.activemq.broker.BrokerService
