@@ -2,7 +2,7 @@ name := "zio-jms"
 organization := "io.github.dobrynya"
 version := "0.2"
 homepage := Some(url("https://github.com/dobrynya/zio-jms"))
-developers += Developer("dobrynya", "Dmitry Dobrynin", "dobrynya@inbox.ru", url("https://gitlab.com/dobrynya"))
+developers += Developer("dobrynya", "Dmitry Dobrynin", "dobrynya@inbox.ru", url("https://github.com/dobrynya"))
 scmInfo := Some(
   ScmInfo(
     url("https://github.com/dobrynya/zio-jms"),

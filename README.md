@@ -6,7 +6,8 @@ ZIO-JMS adapts JMS API to ZIO streams and makes it working more conveniently and
 ---
 # Add library to your project
 * Add Maven Central Repository to your build script
-* Add dependency on the library "io.github.dobrynya" %% "zio-jms" % "0.2"
+* Add dependency on the library "io.github.dobrynya" %% "zio-jms" % "0.2". 
+zio-jms is available for Scala 2 & 3
 
 # Receive messages
 
