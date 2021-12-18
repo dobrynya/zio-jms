@@ -9,10 +9,10 @@ class JmsProducer[R, E >: JMSException, A](session: Session, sender: A => ZIO[R,
     semaphore.withPermit(sender(message).map(message -> _))
 
   def commit: IO[JMSException, Unit] =
-    semaphore.withPermit(Task(session.commit()).refineToOrDie)
+    semaphore.withPermit(ZIO.attemptBlocking(session.commit()).refineToOrDie)
 
   def rollback: IO[JMSException, Unit] =
-    semaphore.withPermit(Task(session.rollback()).refineToOrDie)
+    semaphore.withPermit(ZIO.attemptBlocking(session.rollback()).refineToOrDie)
 }
 
 object JmsProducer {
@@ -33,25 +33,25 @@ object JmsProducer {
     encoder: (A, Session) => ZIO[R, E, Message],
     transacted: Boolean = false,
     acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
-  ): ZSink[R with BlockingConnection, E, A, A, Unit] =
-    ZSink.managed[R with BlockingConnection, E, A, JmsProducer[R, E, A], A, Unit](
-      make(destination, encoder, transacted, acknowledgementMode)
-    ) { jmsProducer =>
-      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
-    }
+  ): ZSink[R & JMSConnection & Scope, E, A, A, Unit] =
+    ZSink
+      .fromZIO(make(destination, encoder, transacted, acknowledgementMode))
+      .flatMap { jmsProducer =>
+        ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
+      }
 
   def make[R, E >: JMSException, A](
     destination: DestinationFactory,
     encoder: (A, Session) => ZIO[R, E, Message],
     transacted: Boolean = false,
     acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
-  ): ZManaged[R with BlockingConnection, JMSException, JmsProducer[R, E, A]] =
+  ): ZIO[R & JMSConnection & Scope, JMSException, JmsProducer[R, E, A]] =
     for {
-      connection <- ZIO.service[JMSConnection].toManaged_
+      connection <- ZIO.service[JMSConnection]
       session    <- session(connection, transacted, acknowledgementMode)
-      d          <- destination(session).toManaged_
+      d          <- destination(session)
       mp         <- producer(session)
-      semaphore  <- Semaphore.make(1).toManaged_
+      semaphore  <- Semaphore.make(1)
     } yield
       new JmsProducer[R, E, A](session,
                                message =>
@@ -65,25 +65,27 @@ object JmsProducer {
     encoderAndRouter: (A, Session) => ZIO[R, E, (Destination, Message)],
     transacted: Boolean = false,
     acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
-  ): ZSink[R with BlockingConnection, E, A, A, Unit] =
-    ZSink.managed[R with BlockingConnection, E, A, JmsProducer[R, E, A], A, Unit](
-      for {
-        connection <- ZIO.service[JMSConnection].toManaged_
-        session    <- session(connection, transacted, acknowledgementMode)
-        mp         <- producer(session)
-        semaphore  <- Semaphore.make(1).toManaged_
-      } yield
-        new JmsProducer[R, E, A](session,
-                                 message =>
-                                   encoderAndRouter(message, session).map {
-                                     case (d, encoded) =>
-                                       mp.send(d, encoded)
-                                       encoded
-                                 },
-                                 semaphore)
-    ) { jmsProducer =>
-      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
-    }
+  ): ZSink[R & JMSConnection & Scope, E, A, A, Unit] =
+    ZSink
+      .fromZIO[R & JMSConnection & Scope, E, JmsProducer[R, E, A]](
+        for {
+          connection <- ZIO.service[JMSConnection]
+          session    <- session(connection, transacted, acknowledgementMode)
+          mp         <- producer(session)
+          semaphore  <- Semaphore.make(1)
+        } yield
+          new JmsProducer[R, E, A](session,
+                                   message =>
+                                     encoderAndRouter(message, session).map {
+                                       case (d, encoded) =>
+                                         mp.send(d, encoded)
+                                         encoded
+                                   },
+                                   semaphore)
+      )
+      .flatMap { jmsProducer =>
+        ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
+      }
 
   /**
    * Creates a sink for implementing Request - Reply integration pattern.
@@ -105,25 +107,27 @@ object JmsProducer {
     encoder: (A, Session) => ZIO[R, E, Message],
     transacted: Boolean = false,
     acknowledgementMode: Int = Session.AUTO_ACKNOWLEDGE
-  ): ZSink[R with BlockingConnection, E, A, A, Unit] =
-    ZSink.managed[R with BlockingConnection, E, A, JmsProducer[R, E, A], A, Unit](
-      for {
-        connection  <- ZIO.service[JMSConnection].toManaged_
-        session     <- session(connection, transacted, acknowledgementMode)
-        mp          <- producer(session)
-        semaphore   <- Semaphore.make(1).toManaged_
-        d           <- destination(session).toManaged_
-        replyHeader <- replyTo(session).toManaged_
-      } yield
-        new JmsProducer[R, E, A](session,
-                                 message =>
-                                   encoder(message, session).map { encoded =>
-                                     encoded.setJMSReplyTo(replyHeader)
-                                     mp.send(d, encoded)
-                                     encoded
-                                 },
-                                 semaphore)
-    ) { jmsProducer =>
-      ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
-    }
+  ): ZSink[R & JMSConnection & Scope, E, A, A, Unit] =
+    ZSink
+      .fromZIO[R & JMSConnection & Scope, E, JmsProducer[R, E, A]](
+        for {
+          connection  <- ZIO.service[JMSConnection]
+          session     <- session(connection, transacted, acknowledgementMode)
+          mp          <- producer(session)
+          semaphore   <- Semaphore.make(1)
+          d           <- destination(session)
+          replyHeader <- replyTo(session)
+        } yield
+          new JmsProducer[R, E, A](session,
+                                   message =>
+                                     encoder(message, session).map { encoded =>
+                                       encoded.setJMSReplyTo(replyHeader)
+                                       mp.send(d, encoded)
+                                       encoded
+                                   },
+                                   semaphore)
+      )
+      .flatMap { jmsProducer =>
+        ZSink.foreach(message => jmsProducer.produce(message) <* jmsProducer.commit.when(transacted))
+      }
 }

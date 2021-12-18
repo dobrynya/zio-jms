@@ -15,18 +15,19 @@ crossPaths := true
 publishMavenStyle := true
 publishTo := Some("releases" at "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2")
 
-scalaVersion := "3.1.0"
-crossScalaVersions := List("2.13.7", "3.1.0")
+scalaVersion := "3.1.2"
+crossScalaVersions := List("2.13.7", "3.1.2")
 
 libraryDependencies ++= Seq(
-  "dev.zio" %% "zio" % "1.0.12",
-  "dev.zio" %% "zio-streams" % "1.0.12",
-  "dev.zio" %% "zio-test" % "1.0.12" % Test,
-  "dev.zio" %% "zio-test-sbt" % "1.0.12" % Test,
+  "dev.zio" %% "zio" % "2.0.0-RC6",
+  "dev.zio" %% "zio-streams" % "2.0.0-RC6",
+  "dev.zio" %% "zio-test" % "2.0.0-RC6" % Test,
+  "dev.zio" %% "zio-test-sbt" % "2.0.0-RC6" % Test,
   "org.apache.geronimo.specs" % "geronimo-jms_1.1_spec" % "1.1.1" % Provided,
   "org.apache.activemq" % "activemq-broker" % "5.16.2" % Test,
   "org.apache.activemq" % "activemq-kahadb-store" % "5.16.2" % Test,
-  "ch.qos.logback" % "logback-classic" % "1.2.6" % Test
+  "ch.qos.logback" % "logback-classic" % "1.2.6" % Test,
+  "io.github.sullis" %% "jms-testkit" % "1.0.4" % Test
 )
 
 testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")

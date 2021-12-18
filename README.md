@@ -14,12 +14,11 @@ zio-jms is available for Scala 2 & 3
 For receiving messages it needs to create a message consumer using utility methods in JmsConsumer object
 
 ```scala
-import zio.{ZIO, Has, Chunk}
-import zio.blocking._
+import zio.{ZIO, Chunk}
 import javax.jms.{Connection, Message, JMSException}
 import io.github.dobrynya.zio.jms._
 
-val received: ZIO[Has[Connection] with Blocking, JMSException, Chunk[Message]] = 
+val received: ZIO[Connection, JMSException, Chunk[Message]] = 
     JmsConsumer.consume(Queue("test-queue"))
                  .take(5)
                  .collect(onlyText)
@@ -29,14 +28,13 @@ val received: ZIO[Has[Connection] with Blocking, JMSException, Chunk[Message]] =
 You can process a stream of messages transactionally like follows
 
 ```scala
-import zio.{ZIO, Has, Chunk, UIO}
-import zio.blocking._
+import zio.{ZIO, Chunk, UIO}
 import javax.jms.{Connection, Message, JMSException}
 import io.github.dobrynya.zio.jms._
 
 def messageProcessor(message: Message): UIO[Unit] = ??? 
 
-val received: ZIO[Has[Connection] with Blocking, JMSException, Unit] = 
+val received: ZIO[Connection, JMSException, Unit] = 
     JmsConsumer.consumeTx(Queue("test-queue"))
                  .take(5)
                  .tap(transactionalMessage => messageProcessor(transactionalMessage.message) <* transactionalMessage.commit)
@@ -47,16 +45,16 @@ Another ability to process input messages without using ZIO streams is more conc
 successful processing
 
 ```scala
-import zio.{ZIO, Has}
-import zio.blocking._
-import zio.console._
-import javax.jms.{Connection, Message, JMSException}
+import zio._
+
+import javax.jms.{Connection, JMSException, Message}
 import io.github.dobrynya.zio.jms._
+import zio.Console.printLine
 
 def someMessageProcessor(message: Message): ZIO[Console, Exception, Unit] = 
-    putStrLn(s"Received message $message")
+    printLine(s"Received message $message")
 
-val processing: ZIO[Console with Blocking with Has[Connection], Exception, Unit] = 
+val processing: ZIO[Console with Connection, Exception, Unit] = 
     JmsConsumer.consumeWith(Topic("test-topic"), someMessageProcessor)
 ```
 
@@ -64,15 +62,14 @@ In case of possible failures during processing a message I recommend using a tra
 when it is processed successfully and rolls back when it fails
 
 ```scala
-import zio.{ZIO, IO, Has}
-import zio.blocking._
+import zio.{ZIO, IO}
 import javax.jms.{Connection, Message, JMSException}
 import io.github.dobrynya.zio.jms._
 
 def someMessageProcessor(message: Message): IO[String, Unit] = 
    IO.fail(s"Error occurred during processing a message $message")
 
-val processing: ZIO[Blocking with Has[Connection], Any, Unit] = 
+val processing: ZIO[Connection, Any, Unit] = 
    JmsConsumer.consumeTxWith(Topic("test-topic"), someMessageProcessor)
 ```
 
@@ -94,18 +91,19 @@ ZStream.fromIterable(messages).run(JmsProducer.sink(Queue("test-queue"), textMes
 The last thing is to provide a connection like follows
 
 ```scala
-import zio.{ZLayer, Has}
-import zio.blocking._
+import zio._
 import javax.jms.{Connection, ConnectionFactory, JMSException}
 import io.github.dobrynya.zio.jms._
 
 def connectionFactory: ConnectionFactory = ???
 
-val connectionLayer: ZLayer[Blocking, JMSException, Blocking with Has[Connection]] = 
-    ZLayer.fromManaged(connection(connectionFactory)).passthrough
+val connectionLayer: Layer[JMSException, Connection] =
+  ZLayer.fromManaged(connection(connectionFactory))
 
-val consuming = JmsConsumer.consume(Queue("test-queue")).runDrain
-    .provideSomeLayer(connectionLayer)
+val consuming = JmsConsumer
+  .consume(Queue("test-queue"))
+  .runDrain
+  .provideSomeLayer(connectionLayer)
 ```
 
 # Request - Reply integration pattern
