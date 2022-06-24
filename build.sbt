@@ -19,10 +19,9 @@ scalaVersion := "3.1.2"
 crossScalaVersions := List("2.13.7", "3.1.2")
 
 libraryDependencies ++= Seq(
-  "dev.zio" %% "zio" % "2.0.0-RC6",
-  "dev.zio" %% "zio-streams" % "2.0.0-RC6",
-  "dev.zio" %% "zio-test" % "2.0.0-RC6" % Test,
-  "dev.zio" %% "zio-test-sbt" % "2.0.0-RC6" % Test,
+  "dev.zio" %% "zio-streams" % "2.0.0",
+  "dev.zio" %% "zio-test" % "2.0.0" % Test,
+  "dev.zio" %% "zio-test-sbt" % "2.0.0" % Test,
   "org.apache.geronimo.specs" % "geronimo-jms_1.1_spec" % "1.1.1" % Provided,
   "org.apache.activemq" % "activemq-broker" % "5.16.2" % Test,
   "org.apache.activemq" % "activemq-kahadb-store" % "5.16.2" % Test,
