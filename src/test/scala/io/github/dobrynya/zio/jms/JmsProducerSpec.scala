@@ -38,6 +38,6 @@ object JmsProducerSpec extends ZIOSpecDefault {
           } yield assertTrue(received.contains(s"$queueNumber"))
         }
       }
-    ).provideCustomShared(brokerLayer >>> connectionFactoryLayer >>> makeConnection()) @@
+    ).provideShared(brokerLayer >>> connectionFactoryLayer >>> makeConnection()) @@
       withLiveEnvironment @@ timed @@ timeout(3.minutes) @@ sequential
 }

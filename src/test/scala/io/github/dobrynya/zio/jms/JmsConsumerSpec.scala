@@ -19,7 +19,7 @@ object JmsConsumerSpec extends ZIOSpecDefault {
             _ <- send(q, messages)
             received <- JmsConsumer
                          .consume(q)
-                         .take(messages.size)
+                         .take(messages.size.toLong)
                          .collect(onlyText)
                          .runCollect
                          .map(_.toList)
@@ -33,14 +33,14 @@ object JmsConsumerSpec extends ZIOSpecDefault {
             _ <- send(q, messages)
             notComitted <- JmsConsumer
                             .consumeTx(q)
-                            .take(messages.size)
+                            .take(messages.size.toLong)
                             .map(_.message)
                             .collect(onlyText)
                             .runCollect
                             .map(_.toList)
             comitted <- JmsConsumer
                          .consumeTx(q)
-                         .take(messages.size)
+                         .take(messages.size.toLong)
                          .tap(_.commit)
                          .map(_.message)
                          .collect(onlyText)
@@ -125,7 +125,7 @@ object JmsConsumerSpec extends ZIOSpecDefault {
                                textMessageEncoder(onlyText(message).toUpperCase, session).map(Some.apply)
                            )
                            .fork
-              received <- JmsConsumer.consume(reply).take(messages.size).collect(onlyText).runCollect.map(_.toList) <*
+              received <- JmsConsumer.consume(reply).take(messages.size.toLong).collect(onlyText).runCollect.map(_.toList) <*
                            consumer.interrupt
             } yield assertTrue(received == messages.map(_.toUpperCase))
         }
@@ -147,12 +147,12 @@ object JmsConsumerSpec extends ZIOSpecDefault {
                                                 transacted = true,
                                                 Session.SESSION_TRANSACTED)
                            .fork
-              received <- JmsConsumer.consume(reply).collect(onlyText).take(messages.size).runCollect.map(_.toList) <*
+              received <- JmsConsumer.consume(reply).collect(onlyText).take(messages.size.toLong).runCollect.map(_.toList) <*
                            consumer.interrupt
             } yield assertTrue(received == messages.map(_.toUpperCase))
         }
       }
-    ).provideCustomShared(brokerLayer >>> connectionFactoryLayer >>> makeConnection()) @@
+    ).provideShared(brokerLayer >>> connectionFactoryLayer >>> makeConnection()) @@
       withLiveEnvironment @@ timed @@ timeout(3.minutes) @@ sequential
 
   def send(destination: DestinationFactory, messages: List[String]): RIO[Connection, Unit] =
