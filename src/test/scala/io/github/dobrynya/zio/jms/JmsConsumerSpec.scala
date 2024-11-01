@@ -78,7 +78,7 @@ object JmsConsumerSpec extends ZIOSpecDefault {
             } yield assertTrue(received == messages)
         }
       },
-      test("Consuming a queue should be interruptable") {
+      test("Consuming a queue should be interruptible") {
         val q = Queue("test-5")
         for {
           collector       <- Ref.make(false)
@@ -86,7 +86,7 @@ object JmsConsumerSpec extends ZIOSpecDefault {
           receivedMessage <- consumer.interrupt.delay(1.second) *> collector.get
         } yield assertTrue(!receivedMessage)
       },
-      test("Transactional consuming a queue should be interruptable") {
+      test("Transactional consuming a queue should be interruptible") {
         val q = Queue("test-6")
         for {
           collector       <- Ref.make(false)
